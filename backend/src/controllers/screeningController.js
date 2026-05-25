@@ -5,6 +5,20 @@ const client = new OpenAI({
 	apiKey: process.env.HUGGING_FACE_API_KEY,
 });
 
+const MAX_RESUME_SIZE = 50000; // 50KB
+
+const validateResume = (resume) => {
+  if (!resume || typeof resume !== 'string') {
+    throw new Error('Resume must be a non-empty string');
+  }
+  if (resume.length > MAX_RESUME_SIZE) {
+    throw new Error(`Resume exceeds maximum size of ${MAX_RESUME_SIZE} characters`);
+  }
+  if (/```|[\x00\x1a]/g.test(resume)) {
+    throw new Error('Resume contains invalid characters');
+  }
+};
+
 const callHuggingFaceApi = async (model, prompt) => {
   try {
     const chatCompletion = await client.chat.completions.create({
@@ -46,6 +60,7 @@ const screenResume = async (req, res) => {
   }
 
   try {
+    validateResume(resume);
     const analysisPrompt = `Analyze the provided resume for a software engineer position. Extract skills, years of experience (as a number), strengths, and any missing key requirements.
 Return a JSON object with the following structure: {"skills": [], "experience": 0, "strengths": [], "missing_requirements": []}.
 Do not include any text other than the JSON object.
