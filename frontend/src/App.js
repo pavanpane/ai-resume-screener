@@ -47,11 +47,36 @@ function App() {
       {analysis && (
         <div className="mt-5">
           <h2>Analysis Result</h2>
+          {analysis.safety_checks && (
+            <div className="mb-4">
+              {!analysis.safety_checks.analysis_safe && (
+                <div className="alert alert-warning" role="alert">
+                  <strong>⚠️ Safety Warning:</strong> Analysis content flagged as potentially unsafe.
+                  <br />
+                  <small>{analysis.safety_checks.analysis_warning}</small>
+                </div>
+              )}
+              {!analysis.safety_checks.secondary_content_safe && (
+                <div className="alert alert-warning" role="alert">
+                  <strong>⚠️ Safety Warning:</strong> Generated content flagged as potentially unsafe.
+                  <br />
+                  <small>{analysis.safety_checks.secondary_content_warning}</small>
+                </div>
+              )}
+              {!analysis.safety_checks.summary_safe && (
+                <div className="alert alert-warning" role="alert">
+                  <strong>⚠️ Safety Warning:</strong> Summary content flagged as potentially unsafe.
+                  <br />
+                  <small>{analysis.safety_checks.summary_warning}</small>
+                </div>
+              )}
+            </div>
+          )}
           <div className="card">
             <div className="card-body">
               <h5 className="card-title">Decision: {analysis.decision}</h5>
               <p className="card-text"><strong>Recruiter Summary:</strong> {analysis.recruiter_summary}</p>
-              
+
               {analysis.decision === 'interview' && (
                 <div>
                   <h6>Interview Questions:</h6>

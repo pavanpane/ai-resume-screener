@@ -37,6 +37,40 @@ const callHuggingFaceApi = async (model, prompt) => {
   }
 };
 
+const checkContentSafety = async (content) => {
+  try {
+    const safetyCheckPrompt = `You are a content safety classifier. Analyze the following text and determine if it contains any unsafe, offensive, harmful, or inappropriate content. Respond with a JSON object: {"is_safe": true/false, "reason": "explanation if unsafe"}
+
+Content to analyze:
+${content}`;
+
+    const safetyModel = 'meta-llama/Llama-Guard-3-8B';
+    const safetyResult = await callHuggingFaceApi(safetyModel, safetyCheckPrompt);
+
+    try {
+      // Try to parse JSON response from safety model
+      const jsonMatch = safetyResult.match(/(\{[\s\S]*\})/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[1]);
+      }
+      // Fallback: check if response contains safety indicators
+      const lowercaseResult = safetyResult.toLowerCase();
+      return {
+        is_safe: !lowercaseResult.includes('unsafe') && !lowercaseResult.includes('harmful'),
+        reason: safetyResult
+      };
+    } catch (parseError) {
+      console.error('Failed to parse safety check response:', safetyResult);
+      // Default to safe if we can't parse (to avoid blocking valid content)
+      return { is_safe: true, reason: 'Unable to parse safety response' };
+    }
+  } catch (error) {
+    console.error('Error checking content safety:', error);
+    // Default to safe if safety check fails
+    return { is_safe: true, reason: 'Safety check unavailable' };
+  }
+};
+
 const parseJsonResponse = (text) => {
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```|(\{[\s\S]*\})/);
   if (!jsonMatch) {
@@ -71,10 +105,13 @@ ${resume}`;
     const analysisResult = await callHuggingFaceApi(analysisModel, analysisPrompt);
     const analysis = parseJsonResponse(analysisResult);
 
+    // Check safety of analysis
+    const analysisSafetyCheck = await checkContentSafety(JSON.stringify(analysis));
+
     // More sophisticated scoring logic
     const score = (analysis.skills.length * 5) + (analysis.experience * 10) + (analysis.strengths.length * 2);
 
-    let decision, secondCallResult;
+    let decision, secondCallResult, secondCallSafetyCheck;
 
     if (score > 40) {
       decision = 'interview';
@@ -83,6 +120,7 @@ ${resume}`;
       const questionsResult = await callHuggingFaceApi(questionsModel, questionsPrompt);
       const questionsData = parseJsonResponse(questionsResult);
       secondCallResult = { interview_questions: questionsData.interview_questions };
+      secondCallSafetyCheck = await checkContentSafety(questionsResult);
 
     } else {
       decision = 'reject';
@@ -93,6 +131,7 @@ Return a JSON object with two keys: "rejection_reason" and "improvement_suggesti
       const rejectionModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
       const rejectionResult = await callHuggingFaceApi(rejectionModel, rejectionPrompt);
       secondCallResult = parseJsonResponse(rejectionResult);
+      secondCallSafetyCheck = await checkContentSafety(rejectionResult);
     }
 
     const summaryPrompt = `Based on the following analysis, generate a 2-3 sentence summary for a recruiter.
@@ -101,12 +140,21 @@ ${JSON.stringify(analysis, null, 2)}`;
     const summaryModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
     const summaryResult = await callHuggingFaceApi(summaryModel, summaryPrompt);
     const recruiter_summary = summaryResult.trim();
+    const summarySafetyCheck = await checkContentSafety(recruiter_summary);
 
     res.json({
       analysis,
       decision,
       ...secondCallResult,
       recruiter_summary,
+      safety_checks: {
+        analysis_safe: analysisSafetyCheck.is_safe,
+        analysis_warning: !analysisSafetyCheck.is_safe ? analysisSafetyCheck.reason : null,
+        secondary_content_safe: secondCallSafetyCheck.is_safe,
+        secondary_content_warning: !secondCallSafetyCheck.is_safe ? secondCallSafetyCheck.reason : null,
+        summary_safe: summarySafetyCheck.is_safe,
+        summary_warning: !summarySafetyCheck.is_safe ? summarySafetyCheck.reason : null,
+      },
     });
   } catch (error) {
     console.error("Error in screenResume:", error);
