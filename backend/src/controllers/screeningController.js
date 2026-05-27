@@ -115,6 +115,107 @@ const parseJsonResponse = (text) => {
   }
 };
 
+const validateRecruiterSummary = async (summary, analysis, roleEvaluation) => {
+  try {
+    const validationPrompt = `You are a validation judge. Evaluate if the recruiter summary accurately reflects the candidate's profile.
+
+Extracted Data:
+- Skills: ${analysis.skills.join(', ')}
+- Years of Experience: ${analysis.experience}
+- Strengths: ${analysis.strengths.join(', ')}
+- Missing Skills: ${roleEvaluation.feedback.missingRequiredSkills.join(', ')}
+
+Recruiter Summary:
+"${summary}"
+
+Check if the summary:
+1. Mentions key extracted skills
+2. Reflects the years of experience accurately
+3. Highlights key strengths
+4. Is truthful and not misleading
+
+Return a JSON object: {"is_accurate": true/false, "missing_information": [], "discrepancies": [], "confidence": 0-100}`;
+
+    const validationModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
+    const validationResult = await callHuggingFaceApi(validationModel, validationPrompt);
+    const validationData = parseJsonResponse(validationResult);
+
+    return {
+      is_accurate: validationData.is_accurate,
+      missing_information: validationData.missing_information || [],
+      discrepancies: validationData.discrepancies || [],
+      confidence: validationData.confidence || 0,
+      validation_summary: validationResult
+    };
+  } catch (error) {
+    console.error('Error validating recruiter summary:', error);
+    return {
+      is_accurate: null,
+      missing_information: [],
+      discrepancies: [],
+      confidence: 0,
+      validation_error: error.message
+    };
+  }
+};
+
+const generateAndValidateRecruiterSummary = async (analysis, roleEvaluation, maxRetries = 10) => {
+  let attempt = 0;
+  let recruiter_summary = '';
+  let summaryValidation = null;
+  let verified = false;
+
+  console.log(`[SUMMARY_VALIDATION] Starting summary generation with max retries: ${maxRetries}`);
+
+  while (attempt < maxRetries) {
+    attempt++;
+    console.log(`[SUMMARY_VALIDATION] Generating recruiter summary - Attempt ${attempt}/${maxRetries}`);
+
+    const summaryPrompt = `Based on the following analysis, generate a 2-3 sentence summary for a recruiter.
+Make sure to clearly mention:
+1. The candidate's key skills
+2. Years of experience
+3. Main strengths
+
+Be concise and accurate.
+Analysis:
+${JSON.stringify(analysis, null, 2)}`;
+
+    const summaryModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
+    const summaryResult = await callHuggingFaceApi(summaryModel, summaryPrompt);
+    recruiter_summary = summaryResult.trim();
+
+    // Validate the generated summary
+    console.log(`[SUMMARY_VALIDATION] Validating summary...`);
+    summaryValidation = await validateRecruiterSummary(recruiter_summary, analysis, roleEvaluation);
+    console.log(`[SUMMARY_VALIDATION] Validation result - Accurate: ${summaryValidation.is_accurate}, Confidence: ${summaryValidation.confidence}`);
+
+    // Check if summary is accurate and confidence is acceptable (>= 70)
+    if (summaryValidation.is_accurate === true && summaryValidation.confidence >= 70) {
+      verified = true;
+      console.log(`[SUMMARY_VALIDATION] ✓ Summary verified on attempt ${attempt}`);
+      break;
+    } else {
+      console.log(`[SUMMARY_VALIDATION] ✗ Summary validation failed on attempt ${attempt}. Confidence: ${summaryValidation.confidence}, Discrepancies: ${summaryValidation.discrepancies.length}`);
+    }
+  }
+
+  // If not verified after max retries, throw error to guarantee verified summary
+  if (!verified) {
+    const errorMsg = `Failed to generate a verified recruiter summary after ${maxRetries} attempts. Last validation confidence: ${summaryValidation.confidence}%`;
+    console.error(`[SUMMARY_VALIDATION] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+  console.log(`[SUMMARY_VALIDATION] Summary generation and validation complete!`);
+
+  return {
+    recruiter_summary,
+    validated: summaryValidation,
+    verified: true,
+    attempts: attempt
+  };
+};
+
 const evaluateCandidateForRole = (analysis, roleKey) => {
   const role = roles[roleKey];
   if (!role) {
@@ -234,36 +335,55 @@ Return a JSON object with two keys: "rejection_reason" and "improvement_suggesti
       secondCallSafetyCheck = await checkContentSafety(rejectionResult);
     }
 
-    const summaryPrompt = `Based on the following analysis, generate a 2-3 sentence summary for a recruiter.
-Analysis:
-${JSON.stringify(analysis, null, 2)}`;
-    const summaryModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
-    const summaryResult = await callHuggingFaceApi(summaryModel, summaryPrompt);
-    const recruiter_summary = summaryResult.trim();
-    const summarySafetyCheck = await checkContentSafety(recruiter_summary);
+    // Generate and validate recruiter summary with retry logic
+    let summaryResult, recruiter_summary, summarySafetyCheck;
+    try {
+      summaryResult = await generateAndValidateRecruiterSummary(analysis, roleEvaluation);
+      recruiter_summary = summaryResult.recruiter_summary;
+      summarySafetyCheck = await checkContentSafety(recruiter_summary);
+    } catch (summaryError) {
+      console.error("Error generating verified summary:", summaryError.message);
+      // Fallback: return error response instead of crashing
+      return res.status(500).json({ error: `Failed to generate verified recruiter summary: ${summaryError.message}` });
+    }
 
-    res.json({
-      analysis,
-      decision,
-      role: roleEvaluation.role,
-      score: roleEvaluation.score,
-      roleEvaluation: {
-        matchedSkills: roleEvaluation.feedback.matchedSkills,
-        missingRequiredSkills: roleEvaluation.feedback.missingRequiredSkills,
-        matchedPreferredSkills: roleEvaluation.feedback.matchedPreferredSkills,
-        experienceFit: roleEvaluation.feedback.experienceFit,
-      },
-      ...secondCallResult,
-      recruiter_summary,
-      safety_checks: {
-        analysis_safe: analysisSafetyCheck.is_safe,
-        analysis_warning: !analysisSafetyCheck.is_safe ? analysisSafetyCheck.reason : null,
-        secondary_content_safe: secondCallSafetyCheck.is_safe,
-        secondary_content_warning: !secondCallSafetyCheck.is_safe ? secondCallSafetyCheck.reason : null,
-        summary_safe: summarySafetyCheck.is_safe,
-        summary_warning: !summarySafetyCheck.is_safe ? summarySafetyCheck.reason : null,
-      },
-    });
+    try {
+      const responseData = {
+        analysis,
+        decision,
+        role: roleEvaluation.role,
+        score: roleEvaluation.score,
+        roleEvaluation: {
+          matchedSkills: roleEvaluation.feedback.matchedSkills,
+          missingRequiredSkills: roleEvaluation.feedback.missingRequiredSkills,
+          matchedPreferredSkills: roleEvaluation.feedback.matchedPreferredSkills,
+          experienceFit: roleEvaluation.feedback.experienceFit,
+        },
+        ...secondCallResult,
+        recruiter_summary,
+        summary_validation: {
+          verified: summaryResult.verified,
+          is_accurate: summaryResult.validated.is_accurate,
+          missing_information: summaryResult.validated.missing_information,
+          discrepancies: summaryResult.validated.discrepancies,
+          confidence: summaryResult.validated.confidence,
+          attempts: summaryResult.attempts,
+        },
+        safety_checks: {
+          analysis_safe: analysisSafetyCheck.is_safe,
+          analysis_warning: !analysisSafetyCheck.is_safe ? analysisSafetyCheck.reason : null,
+          secondary_content_safe: secondCallSafetyCheck.is_safe,
+          secondary_content_warning: !secondCallSafetyCheck.is_safe ? secondCallSafetyCheck.reason : null,
+          summary_safe: summarySafetyCheck.is_safe,
+          summary_warning: !summarySafetyCheck.is_safe ? summarySafetyCheck.reason : null,
+        },
+      };
+      console.log("[RESPONSE] Summary validation data:", responseData.summary_validation);
+      res.json(responseData);
+    } catch (responseError) {
+      console.error("[RESPONSE_ERROR]", responseError);
+      res.status(500).json({ error: `Failed to construct response: ${responseError.message}` });
+    }
   } catch (error) {
     console.error("Error in screenResume:", error);
     res.status(500).json({ error: error.message });
