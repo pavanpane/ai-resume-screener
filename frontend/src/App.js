@@ -2,10 +2,19 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import './App.css';
 
+const ROLES = {
+  frontend: 'Frontend Engineer',
+  backend: 'Backend Engineer',
+  fullstack: 'Full Stack Engineer',
+  devops: 'DevOps Engineer',
+  dataengineer: 'Data Engineer'
+};
+
 function App() {
   const [resume, setResume] = useState('');
   const [file, setFile] = useState(null);
   const [inputMode, setInputMode] = useState('text');
+  const [selectedRole, setSelectedRole] = useState('fullstack');
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -33,15 +42,16 @@ function App() {
     setError('');
     setAnalysis(null);
     try {
+      const apiUrl = `http://localhost:3001/api/screen/${selectedRole}`;
       if (inputMode === 'file' && file) {
         const formData = new FormData();
         formData.append('resume', file);
-        const response = await axios.post('http://localhost:5000/api/screen', formData, {
+        const response = await axios.post(apiUrl, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         setAnalysis(response.data);
       } else if (inputMode === 'text' && resume) {
-        const response = await axios.post('http://localhost:5000/api/screen', { resume });
+        const response = await axios.post(apiUrl, { resume });
         setAnalysis(response.data);
       }
     } catch (err) {
@@ -60,6 +70,21 @@ function App() {
   return (
     <div className="container mt-5">
       <h1 className="text-center">AI Resume Screener</h1>
+
+      <div className="card mt-4">
+        <div className="card-body">
+          <label className="form-label"><strong>Select Job Role</strong></label>
+          <select
+            className="form-select"
+            value={selectedRole}
+            onChange={(e) => setSelectedRole(e.target.value)}
+          >
+            {Object.entries(ROLES).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       <div className="btn-group mt-4 w-100" role="group">
         <input
@@ -154,7 +179,23 @@ function App() {
           )}
           <div className="card">
             <div className="card-body">
-              <h5 className="card-title">Decision: {analysis.decision}</h5>
+              <h5 className="card-title">Role: {analysis.role}</h5>
+              <div className="alert alert-info" role="alert">
+                <strong>Match Score: {analysis.score}%</strong>
+              </div>
+
+              {analysis.roleEvaluation && (
+                <div className="mb-3">
+                  <h6>Role Fit Analysis</h6>
+                  <p><strong>Matched Skills:</strong> {analysis.roleEvaluation.matchedSkills.length > 0 ? analysis.roleEvaluation.matchedSkills.join(', ') : 'None'}</p>
+                  <p><strong>Missing Required Skills:</strong> {analysis.roleEvaluation.missingRequiredSkills.length > 0 ? analysis.roleEvaluation.missingRequiredSkills.join(', ') : 'None'}</p>
+                  <p><strong>Preferred Skills:</strong> {analysis.roleEvaluation.matchedPreferredSkills.length > 0 ? analysis.roleEvaluation.matchedPreferredSkills.join(', ') : 'None'}</p>
+                  <p><strong>Experience Fit:</strong> {analysis.roleEvaluation.experienceFit ? '✓ Yes' : '✗ No'}</p>
+                </div>
+              )}
+
+              <hr />
+              <h5 className="card-title">Decision: {analysis.decision === 'interview' ? '✓ Interview' : '✗ Reject'}</h5>
               <p className="card-text"><strong>Recruiter Summary:</strong> {analysis.recruiter_summary}</p>
 
               {analysis.decision === 'interview' && (

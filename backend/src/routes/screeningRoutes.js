@@ -15,6 +15,7 @@ const upload = multer({
   }
 });
 
+router.post('/screen/:role', upload.single('resume'), screeningController.screenResume);
 router.post('/screen', upload.single('resume'), screeningController.screenResume);
 
 module.exports = router;

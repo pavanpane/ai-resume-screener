@@ -1,5 +1,6 @@
 const { OpenAI } = require("openai");
 const { getDocument } = require('pdfjs-dist/legacy/build/pdf');
+const roles = require('../config/roles');
 
 const client = new OpenAI({
 	baseURL: "https://router.huggingface.co/v1",
@@ -112,11 +113,73 @@ const parseJsonResponse = (text) => {
     console.error("Failed to parse JSON:", jsonString);
     throw new Error('Failed to parse JSON response from model');
   }
-}
+};
+
+const evaluateCandidateForRole = (analysis, roleKey) => {
+  const role = roles[roleKey];
+  if (!role) {
+    throw new Error('Invalid role specified');
+  }
+
+  let score = 0;
+  const feedback = {
+    matchedSkills: [],
+    missingRequiredSkills: [],
+    matchedPreferredSkills: [],
+    experienceFit: false
+  };
+
+  const candidateSkills = (analysis.skills || []).map(s => s.toLowerCase());
+  const candidateExperience = analysis.experience || 0;
+
+  // Check required skills (40% weight)
+  const requiredSkillsLower = role.requiredSkills.map(s => s.toLowerCase());
+  let requiredSkillsMatch = 0;
+  for (const skill of requiredSkillsLower) {
+    if (candidateSkills.some(cs => cs.includes(skill) || skill.includes(cs))) {
+      feedback.matchedSkills.push(skill);
+      requiredSkillsMatch++;
+    } else {
+      feedback.missingRequiredSkills.push(skill);
+    }
+  }
+  const requiredSkillsScore = (requiredSkillsMatch / role.requiredSkills.length) * 40;
+
+  // Check experience (30% weight)
+  const experienceScore = candidateExperience >= role.minYearsExperience ? 30 : (candidateExperience / role.minYearsExperience) * 30;
+  if (candidateExperience >= role.minYearsExperience) {
+    feedback.experienceFit = true;
+  }
+
+  // Check preferred skills (30% weight)
+  const preferredSkillsLower = role.preferredSkills.map(s => s.toLowerCase());
+  let preferredSkillsMatch = 0;
+  for (const skill of preferredSkillsLower) {
+    if (candidateSkills.some(cs => cs.includes(skill) || skill.includes(cs))) {
+      feedback.matchedPreferredSkills.push(skill);
+      preferredSkillsMatch++;
+    }
+  }
+  const preferredSkillsScore = (preferredSkillsMatch / role.preferredSkills.length) * 30;
+
+  score = requiredSkillsScore + experienceScore + preferredSkillsScore;
+
+  return {
+    score: Math.round(score),
+    role: role.name,
+    feedback,
+    decision: score >= role.scoreThresholds.interview ? 'interview' : 'reject'
+  };
+};
 
 const screenResume = async (req, res) => {
   const textResume = req.body.resume;
   const file = req.file;
+  const roleKey = req.params.role || 'fullstack';
+
+  if (!roles[roleKey]) {
+    return res.status(400).json({ error: `Invalid role. Supported roles: ${Object.keys(roles).join(', ')}` });
+  }
 
   if (!textResume && !file) {
     return res.status(400).json({ error: 'Resume content or PDF file is required' });
@@ -131,7 +194,7 @@ const screenResume = async (req, res) => {
     }
 
     validateResume(resume);
-    const analysisPrompt = `Analyze the provided resume for a software engineer position. Extract skills, years of experience (as a number), strengths, and any missing key requirements.
+    const analysisPrompt = `Analyze the provided resume. Extract skills, years of experience (as a number), strengths, and any missing key requirements.
 Return a JSON object with the following structure: {"skills": [], "experience": 0, "strengths": [], "missing_requirements": []}.
 Do not include any text other than the JSON object.
 
@@ -144,14 +207,14 @@ ${resume}`;
     // Check safety of analysis
     const analysisSafetyCheck = await checkContentSafety(JSON.stringify(analysis));
 
-    // More sophisticated scoring logic
-    const score = (analysis.skills.length * 5) + (analysis.experience * 10) + (analysis.strengths.length * 2);
+    // Role-based evaluation
+    const roleEvaluation = evaluateCandidateForRole(analysis, roleKey);
+    const decision = roleEvaluation.decision;
 
-    let decision, secondCallResult, secondCallSafetyCheck;
+    let secondCallResult, secondCallSafetyCheck;
 
-    if (score > 40) {
-      decision = 'interview';
-      const questionsPrompt = `Generate 5 advanced technical interview questions for a software engineer based on these skills: ${analysis.skills.join(', ')}. Return a JSON object with a single key "interview_questions" which is an array of objects, where each object has a "question" key. Example: { "interview_questions": [{ "question": "Describe a time you used Java streams." }] }`;
+    if (decision === 'interview') {
+      const questionsPrompt = `Generate 5 technical interview questions for a ${roles[roleKey].name} position. The candidate has these skills: ${analysis.skills.join(', ')}. Focus on their strengths: ${analysis.strengths.join(', ')}. Return a JSON object with a single key "interview_questions" which is an array of objects, where each object has a "question" key. Example: { "interview_questions": [{ "question": "Describe a time you used Java streams." }] }`;
       const questionsModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
       const questionsResult = await callHuggingFaceApi(questionsModel, questionsPrompt);
       const questionsData = parseJsonResponse(questionsResult);
@@ -159,10 +222,11 @@ ${resume}`;
       secondCallSafetyCheck = await checkContentSafety(questionsResult);
 
     } else {
-      decision = 'reject';
-      const rejectionPrompt = `The candidate is not a good fit for a software engineer role based on this analysis:
-${JSON.stringify(analysis, null, 2)}
-Generate a polite rejection reason and provide constructive suggestions for improvement.
+      const rejectionPrompt = `The candidate is not a good fit for a ${roles[roleKey].name} role.
+Analysis: ${JSON.stringify(analysis, null, 2)}
+Missing required skills: ${roleEvaluation.feedback.missingRequiredSkills.join(', ')}
+Experience: ${analysis.experience} years (required: ${roles[roleKey].minYearsExperience})
+Generate a polite rejection reason and provide constructive suggestions for improvement to match this role.
 Return a JSON object with two keys: "rejection_reason" and "improvement_suggestions".`;
       const rejectionModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
       const rejectionResult = await callHuggingFaceApi(rejectionModel, rejectionPrompt);
@@ -181,6 +245,14 @@ ${JSON.stringify(analysis, null, 2)}`;
     res.json({
       analysis,
       decision,
+      role: roleEvaluation.role,
+      score: roleEvaluation.score,
+      roleEvaluation: {
+        matchedSkills: roleEvaluation.feedback.matchedSkills,
+        missingRequiredSkills: roleEvaluation.feedback.missingRequiredSkills,
+        matchedPreferredSkills: roleEvaluation.feedback.matchedPreferredSkills,
+        experienceFit: roleEvaluation.feedback.experienceFit,
+      },
       ...secondCallResult,
       recruiter_summary,
       safety_checks: {
