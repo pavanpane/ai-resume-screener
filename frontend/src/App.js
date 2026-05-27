@@ -47,28 +47,41 @@ function App() {
     const selectedFiles = e.target.files;
     if (selectedFiles) {
       const fileArray = Array.from(selectedFiles);
+      const newFiles = [...files, ...fileArray];
 
-      if (fileArray.length > 10) {
-        setError('Maximum 10 PDF files allowed');
-        setFiles([]);
+      if (newFiles.length > 10) {
+        setError('Maximum 10 PDF files allowed. You already have ' + files.length);
+        e.target.value = '';
         return;
       }
 
       for (let f of fileArray) {
         if (f.type !== 'application/pdf') {
           setError('Only PDF files are allowed');
-          setFiles([]);
+          e.target.value = '';
           return;
         }
         if (f.size > 5 * 1024 * 1024) {
           setError('File size must be less than 5MB');
-          setFiles([]);
+          e.target.value = '';
           return;
         }
       }
 
-      setFiles(fileArray);
+      // Check for duplicate filenames
+      const duplicates = fileArray.filter(newFile =>
+        files.some(existingFile => existingFile.name === newFile.name)
+      );
+
+      if (duplicates.length > 0) {
+        setError(`Duplicate files: ${duplicates.map(f => f.name).join(', ')}`);
+        e.target.value = '';
+        return;
+      }
+
+      setFiles(newFiles);
       setError('');
+      e.target.value = '';
     }
   };
 
