@@ -42,7 +42,7 @@ function App() {
     setError('');
     setAnalysis(null);
     try {
-      const apiUrl = `http://localhost:3001/api/screen/${selectedRole}`;
+      const apiUrl = `http://localhost:5000/api/screen/${selectedRole}`;
       if (inputMode === 'file' && file) {
         const formData = new FormData();
         formData.append('resume', file);
@@ -122,18 +122,32 @@ function App() {
             onChange={(e) => setResume(e.target.value)}
           ></textarea>
         ) : (
-          <div className="border rounded p-4 text-center" style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <div className="border p-4 text-center" style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <div style={{ marginBottom: '1rem' }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#0ea5e9', opacity: 0.6 }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}>Click to upload your PDF resume</p>
             <input
               type="file"
               accept=".pdf"
               onChange={handleFileChange}
-              className="form-control"
               id="pdfInput"
+              style={{ display: 'none' }}
             />
+            <label htmlFor="pdfInput" className="btn btn-primary" style={{ cursor: 'pointer' }}>
+              Choose PDF File
+            </label>
             {file && (
-              <div className="mt-3">
-                <p className="text-success">✓ File selected: <strong>{file.name}</strong></p>
-                <small className="text-muted">{(file.size / 1024).toFixed(2)} KB</small>
+              <div className="mt-4" style={{ width: '100%' }}>
+                <div className="alert alert-success mb-0">
+                  <p style={{ marginBottom: '0.5rem' }}>✓ File selected</p>
+                  <strong>{file.name}</strong><br />
+                  <small>{(file.size / 1024).toFixed(2)} KB</small>
+                </div>
               </div>
             )}
           </div>
@@ -150,8 +164,8 @@ function App() {
       {error && <div className="alert alert-danger mt-4">{error}</div>}
 
       {analysis && (
-        <div className="mt-5">
-          <h2>Analysis Result</h2>
+        <div className="mt-5 mb-5">
+          <h2 style={{ marginBottom: '2rem' }}>📊 Analysis Result</h2>
           {analysis.safety_checks && (
             <div className="mb-4">
               {!analysis.safety_checks.analysis_safe && (
@@ -177,52 +191,99 @@ function App() {
               )}
             </div>
           )}
-          <div className="card">
+          <div className="card mb-4">
             <div className="card-body">
-              <h5 className="card-title">Role: {analysis.role}</h5>
-              <div className="alert alert-info" role="alert">
-                <strong>Match Score: {analysis.score}%</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h5 className="card-title mb-0">💼 {analysis.role}</h5>
+                <div style={{
+                  backgroundColor: analysis.score >= 70 ? 'rgba(16, 185, 129, 0.2)' : analysis.score >= 50 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  borderRadius: '8px',
+                  padding: '0.5rem 1rem',
+                  border: `2px solid ${analysis.score >= 70 ? '#10b981' : analysis.score >= 50 ? '#f59e0b' : '#ef4444'}`
+                }}>
+                  <strong style={{ fontSize: '1.5rem', color: analysis.score >= 70 ? '#6ee7b7' : analysis.score >= 50 ? '#fcd34d' : '#fca5a5' }}>
+                    {analysis.score}%
+                  </strong>
+                </div>
               </div>
 
               {analysis.roleEvaluation && (
-                <div className="mb-3">
-                  <h6>Role Fit Analysis</h6>
-                  <p><strong>Matched Skills:</strong> {analysis.roleEvaluation.matchedSkills.length > 0 ? analysis.roleEvaluation.matchedSkills.join(', ') : 'None'}</p>
-                  <p><strong>Missing Required Skills:</strong> {analysis.roleEvaluation.missingRequiredSkills.length > 0 ? analysis.roleEvaluation.missingRequiredSkills.join(', ') : 'None'}</p>
-                  <p><strong>Preferred Skills:</strong> {analysis.roleEvaluation.matchedPreferredSkills.length > 0 ? analysis.roleEvaluation.matchedPreferredSkills.join(', ') : 'None'}</p>
-                  <p><strong>Experience Fit:</strong> {analysis.roleEvaluation.experienceFit ? '✓ Yes' : '✗ No'}</p>
+                <div className="mb-4" style={{ backgroundColor: 'rgba(14, 165, 233, 0.05)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
+                  <h6 style={{ marginBottom: '1rem', color: '#38bdf8' }}>🎯 Role Fit Analysis</h6>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>✓ Matched Skills</strong></p>
+                      <p style={{ color: '#6ee7b7' }}>{analysis.roleEvaluation.matchedSkills.length > 0 ? analysis.roleEvaluation.matchedSkills.join(', ') : 'None'}</p>
+                    </div>
+                    <div>
+                      <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>✗ Missing Required</strong></p>
+                      <p style={{ color: '#fca5a5' }}>{analysis.roleEvaluation.missingRequiredSkills.length > 0 ? analysis.roleEvaluation.missingRequiredSkills.join(', ') : 'None'}</p>
+                    </div>
+                    <div>
+                      <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>⭐ Preferred Skills</strong></p>
+                      <p style={{ color: '#fcd34d' }}>{analysis.roleEvaluation.matchedPreferredSkills.length > 0 ? analysis.roleEvaluation.matchedPreferredSkills.join(', ') : 'None'}</p>
+                    </div>
+                    <div>
+                      <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>📅 Experience Fit</strong></p>
+                      <p style={{ color: analysis.roleEvaluation.experienceFit ? '#6ee7b7' : '#fca5a5' }}>
+                        {analysis.roleEvaluation.experienceFit ? '✓ Yes' : '✗ No'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
               <hr />
-              <h5 className="card-title">Decision: {analysis.decision === 'interview' ? '✓ Interview' : '✗ Reject'}</h5>
-              <p className="card-text"><strong>Recruiter Summary:</strong> {analysis.recruiter_summary}</p>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <h5 className="card-title" style={{ marginBottom: '0.5rem' }}>
+                  {analysis.decision === 'interview' ? '✅ Interview' : '❌ Reject'}
+                </h5>
+                <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}><strong>Recruiter Summary</strong></p>
+                <p style={{ color: '#cbd5e1', lineHeight: '1.6' }}>{analysis.recruiter_summary}</p>
+              </div>
 
               {analysis.decision === 'interview' && (
-                <div>
-                  <h6>Interview Questions:</h6>
-                  <ul>
+                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.05)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                  <h6 style={{ marginBottom: '1rem', color: '#6ee7b7' }}>❓ Interview Questions</h6>
+                  <ol style={{ paddingLeft: '1.5rem' }}>
                     {analysis.interview_questions.map((q, index) => (
-                      <li key={index}>{q.question}</li>
+                      <li key={index} style={{ marginBottom: '1rem', color: '#cbd5e1', lineHeight: '1.6' }}>{q.question}</li>
                     ))}
-                  </ul>
+                  </ol>
                 </div>
               )}
 
               {analysis.decision === 'reject' && (
-                <div>
-                  <p><strong>Rejection Reason:</strong> {typeof analysis.rejection_reason === 'string' ? analysis.rejection_reason : <pre>{JSON.stringify(analysis.rejection_reason, null, 2)}</pre>}</p>
-                  <p><strong>Improvement Suggestions:</strong> {typeof analysis.improvement_suggestions === 'string' ? analysis.improvement_suggestions : <pre>{JSON.stringify(analysis.improvement_suggestions, null, 2)}</pre>}</p>
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: '1.5rem' }}>
+                  <h6 style={{ marginBottom: '1rem', color: '#fca5a5' }}>💡 Feedback</h6>
+                  <p style={{ marginBottom: '1rem', color: '#cbd5e1' }}><strong>Rejection Reason</strong></p>
+                  <p style={{ color: '#cbd5e1', lineHeight: '1.6', marginBottom: '1.5rem' }}>{typeof analysis.rejection_reason === 'string' ? analysis.rejection_reason : JSON.stringify(analysis.rejection_reason, null, 2)}</p>
+                  <p style={{ marginBottom: '1rem', color: '#cbd5e1' }}><strong>📈 Improvement Suggestions</strong></p>
+                  <p style={{ color: '#cbd5e1', lineHeight: '1.6' }}>{typeof analysis.improvement_suggestions === 'string' ? analysis.improvement_suggestions : JSON.stringify(analysis.improvement_suggestions, null, 2)}</p>
                 </div>
               )}
 
-              <hr />
-
-              <h6>Resume Details:</h6>
-              <p><strong>Skills:</strong> {analysis.analysis.skills.join(', ')}</p>
-              <p><strong>Experience:</strong> {analysis.analysis.experience}</p>
-              <p><strong>Strengths:</strong> {analysis.analysis.strengths.join(', ')}</p>
-              <p><strong>Missing Requirements:</strong> {analysis.analysis.missing_requirements.join(', ')}</p>
+              <div style={{ backgroundColor: 'rgba(14, 165, 233, 0.05)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
+                <h6 style={{ marginBottom: '1rem', color: '#38bdf8' }}>📋 Resume Details</h6>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  <div>
+                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Skills</strong></p>
+                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.skills.join(', ') || 'None'}</p>
+                  </div>
+                  <div>
+                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Experience</strong></p>
+                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.experience} years</p>
+                  </div>
+                  <div>
+                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Strengths</strong></p>
+                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.strengths.join(', ') || 'None'}</p>
+                  </div>
+                  <div>
+                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Missing Requirements</strong></p>
+                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.missing_requirements.join(', ') || 'None'}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
