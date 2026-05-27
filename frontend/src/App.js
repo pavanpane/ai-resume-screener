@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -18,6 +18,10 @@ function App() {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    document.title = 'Global Logic Screening';
+  }, []);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -69,7 +73,7 @@ function App() {
 
   return (
     <div className="container mt-5">
-      <h1 className="text-center">AI Resume Screener</h1>
+      <h1 className="text-center">Global Logic Screening</h1>
 
       <div className="card mt-4">
         <div className="card-body">
@@ -238,10 +242,60 @@ function App() {
                 <h5 className="card-title" style={{ marginBottom: '0.5rem' }}>
                   {analysis.decision === 'interview' ? '✅ Interview' : '❌ Reject'}
                 </h5>
-                <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}><strong>Recruiter Summary</strong></p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0' }}><strong>Recruiter Summary</strong></p>
+                  {analysis.summary_validation && analysis.summary_validation.verified && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                      border: '1px solid rgba(16, 185, 129, 0.5)',
+                      borderRadius: '20px',
+                      padding: '0.3rem 0.8rem',
+                      fontSize: '0.85rem',
+                      fontWeight: '600'
+                    }}>
+                      <span style={{ color: '#6ee7b7' }}>✓</span>
+                      <span style={{ color: '#6ee7b7' }}>Verified by LLM Judge</span>
+                      <span style={{
+                        color: '#a7f3d0',
+                        fontSize: '0.75rem',
+                        backgroundColor: 'rgba(16, 185, 129, 0.3)',
+                        borderRadius: '12px',
+                        padding: '0.2rem 0.4rem'
+                      }}>
+                        {analysis.summary_validation.confidence}%
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <p style={{ color: '#cbd5e1', lineHeight: '1.6' }}>
                   {analysis.recruiter_summary.replace(/^Here's a 2-3 sentence summary for a recruiter:\s*/, '').trim()}
                 </p>
+                {analysis.summary_validation && analysis.summary_validation.verified && (
+                  <div style={{
+                    marginTop: '1rem',
+                    padding: '0.75rem',
+                    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                    borderLeft: '3px solid #6ee7b7',
+                    borderRadius: '4px'
+                  }}>
+                    <p style={{ color: '#a1d5f7', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                      <strong>✓ Verification Details:</strong>
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.85rem' }}>
+                      <div>
+                        <span style={{ color: '#cbd5e1' }}>Confidence: </span>
+                        <span style={{ color: '#6ee7b7', fontWeight: '600' }}>{analysis.summary_validation.confidence}%</span>
+                      </div>
+                      <div>
+                        <span style={{ color: '#cbd5e1' }}>Attempts: </span>
+                        <span style={{ color: '#6ee7b7', fontWeight: '600' }}>{analysis.summary_validation.attempts}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {analysis.decision === 'interview' && (
