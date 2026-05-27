@@ -239,7 +239,9 @@ function App() {
                   {analysis.decision === 'interview' ? '✅ Interview' : '❌ Reject'}
                 </h5>
                 <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}><strong>Recruiter Summary</strong></p>
-                <p style={{ color: '#cbd5e1', lineHeight: '1.6' }}>{analysis.recruiter_summary}</p>
+                <p style={{ color: '#cbd5e1', lineHeight: '1.6' }}>
+                  {analysis.recruiter_summary.replace(/^Here's a 2-3 sentence summary for a recruiter:\s*/, '').trim()}
+                </p>
               </div>
 
               {analysis.decision === 'interview' && (
@@ -265,23 +267,47 @@ function App() {
 
               <div style={{ backgroundColor: 'rgba(14, 165, 233, 0.05)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
                 <h6 style={{ marginBottom: '1rem', color: '#38bdf8' }}>📋 Resume Details</h6>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                  <div>
-                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Skills</strong></p>
-                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.skills.join(', ') || 'None'}</p>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <p style={{ marginBottom: '0.75rem', color: '#cbd5e1' }}><strong>Skills</strong></p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {analysis.analysis.skills.map((skill, idx) => (
+                      <span key={idx} style={{ backgroundColor: 'rgba(14, 165, 233, 0.2)', color: '#a1d5f7', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                        {skill}
+                      </span>
+                    ))}
                   </div>
-                  <div>
-                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Experience</strong></p>
-                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.experience} years</p>
-                  </div>
-                  <div>
-                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Strengths</strong></p>
-                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.strengths.join(', ') || 'None'}</p>
-                  </div>
-                  <div>
-                    <p style={{ marginBottom: '0.5rem', color: '#cbd5e1' }}><strong>Missing Requirements</strong></p>
-                    <p style={{ color: '#a1d5f7' }}>{analysis.analysis.missing_requirements.join(', ') || 'None'}</p>
-                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <p style={{ marginBottom: '0.75rem', color: '#cbd5e1' }}><strong>Experience</strong></p>
+                  <p style={{ color: '#a1d5f7', fontSize: '1.1rem', fontWeight: '600' }}>{analysis.analysis.experience} years</p>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <p style={{ marginBottom: '0.75rem', color: '#cbd5e1' }}><strong>💪 Strengths</strong></p>
+                  {analysis.analysis.strengths.length > 0 ? (
+                    <ul style={{ paddingLeft: '1.5rem', margin: 0 }}>
+                      {analysis.analysis.strengths.map((strength, idx) => (
+                        <li key={idx} style={{ color: '#6ee7b7', marginBottom: '0.5rem' }}>{strength}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ color: '#a1d5f7' }}>None</p>
+                  )}
+                </div>
+
+                <div>
+                  <p style={{ marginBottom: '0.75rem', color: '#cbd5e1' }}><strong>Missing Requirements</strong></p>
+                  {analysis.analysis.missing_requirements.length > 0 ? (
+                    <ul style={{ paddingLeft: '1.5rem', margin: 0 }}>
+                      {analysis.analysis.missing_requirements.map((req, idx) => (
+                        <li key={idx} style={{ color: '#fca5a5', marginBottom: '0.5rem' }}>{req}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ color: '#a1d5f7' }}>None</p>
+                  )}
                 </div>
               </div>
             </div>
