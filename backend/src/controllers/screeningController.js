@@ -390,7 +390,143 @@ Return a JSON object with two keys: "rejection_reason" and "improvement_suggesti
   }
 };
 
+const batchScreenResumes = async (req, res) => {
+  const files = req.files;
+  const roleKey = req.params.role || 'fullstack';
+
+  if (!roles[roleKey]) {
+    return res.status(400).json({ error: `Invalid role. Supported roles: ${Object.keys(roles).join(', ')}` });
+  }
+
+  if (!files || files.length === 0) {
+    return res.status(400).json({ error: 'At least one PDF file is required' });
+  }
+
+  if (files.length > 10) {
+    return res.status(400).json({ error: 'Maximum 10 PDFs allowed per batch' });
+  }
+
+  try {
+    console.log(`[BATCH_SCREENING] Starting batch screening of ${files.length} resumes for role: ${roleKey}`);
+
+    const results = [];
+    const summaryByFile = [];
+
+    // Process each file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log(`[BATCH_SCREENING] Processing file ${i + 1}/${files.length}: ${file.originalname}`);
+
+      try {
+        const resume = await extractTextFromPDF(file.buffer);
+        validateResume(resume);
+
+        // Analyze resume
+        const analysisPrompt = `Analyze the provided resume. Extract skills, years of experience (as a number), strengths, and any missing key requirements.
+Return a JSON object with the following structure: {"skills": [], "experience": 0, "strengths": [], "missing_requirements": []}.
+Do not include any text other than the JSON object.
+
+Resume:
+${resume}`;
+
+        const analysisModel = 'meta-llama/Llama-3.1-8B-Instruct:novita';
+        const analysisResult = await callHuggingFaceApi(analysisModel, analysisPrompt);
+        const analysis = parseJsonResponse(analysisResult);
+
+        // Role evaluation
+        const roleEvaluation = evaluateCandidateForRole(analysis, roleKey);
+        const decision = roleEvaluation.decision;
+
+        // Generate and validate summary
+        let summaryResult;
+        try {
+          summaryResult = await generateAndValidateRecruiterSummary(analysis, roleEvaluation);
+        } catch (summaryError) {
+          console.error(`[BATCH_SCREENING] Summary generation failed for file ${i + 1}`, summaryError.message);
+          summaryResult = {
+            recruiter_summary: `Unable to generate verified summary. ${summaryError.message}`,
+            validated: { is_accurate: false, confidence: 0 },
+            verified: false,
+            attempts: 0
+          };
+        }
+
+        const recruiter_summary = summaryResult.recruiter_summary;
+
+        results.push({
+          filename: file.originalname,
+          candidate_analysis: {
+            skills: analysis.skills,
+            experience: analysis.experience,
+            strengths: analysis.strengths,
+          },
+          decision,
+          role: roleEvaluation.role,
+          score: roleEvaluation.score,
+          recruiter_summary,
+          summary_validation: {
+            verified: summaryResult.verified,
+            is_accurate: summaryResult.validated.is_accurate,
+            confidence: summaryResult.validated.confidence,
+            attempts: summaryResult.attempts,
+          },
+          matched_skills: roleEvaluation.feedback.matchedSkills,
+          missing_skills: roleEvaluation.feedback.missingRequiredSkills,
+          preferred_skills: roleEvaluation.feedback.matchedPreferredSkills,
+          experience_fit: roleEvaluation.feedback.experienceFit,
+        });
+
+        summaryByFile.push({
+          filename: file.originalname,
+          summary: recruiter_summary.replace(/^Here's a 2-3 sentence summary for a recruiter:\s*/, '').trim(),
+          decision,
+          score: roleEvaluation.score,
+          verified: summaryResult.verified
+        });
+
+      } catch (fileError) {
+        console.error(`[BATCH_SCREENING] Error processing file ${i + 1}:`, fileError.message);
+        results.push({
+          filename: file.originalname,
+          error: fileError.message,
+          status: 'failed'
+        });
+      }
+    }
+
+    // Batch summary
+    const interviewCount = results.filter(r => r.decision === 'interview' && !r.error).length;
+    const rejectCount = results.filter(r => r.decision === 'reject' && !r.error).length;
+    const failedCount = results.filter(r => r.error).length;
+    const avgScore = results
+      .filter(r => !r.error && r.score)
+      .reduce((sum, r) => sum + r.score, 0) / (results.length - failedCount);
+
+    console.log(`[BATCH_SCREENING] Batch complete. Interview: ${interviewCount}, Reject: ${rejectCount}, Failed: ${failedCount}`);
+
+    res.json({
+      batch_id: Date.now(),
+      role: roles[roleKey],
+      total_resumes: files.length,
+      processed: files.length - failedCount,
+      failed: failedCount,
+      summary: {
+        interview_count: interviewCount,
+        reject_count: rejectCount,
+        average_score: Math.round(avgScore),
+      },
+      results,
+      summaries: summaryByFile,
+    });
+
+  } catch (error) {
+    console.error("Error in batchScreenResumes:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   screenResume,
+  batchScreenResumes,
   extractTextFromPDF,
 };

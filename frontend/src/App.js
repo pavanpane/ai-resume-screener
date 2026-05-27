@@ -13,7 +13,9 @@ const ROLES = {
 function App() {
   const [resume, setResume] = useState('');
   const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [inputMode, setInputMode] = useState('text');
+  const [screenMode, setScreenMode] = useState('single');
   const [selectedRole, setSelectedRole] = useState('fullstack');
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -41,13 +43,58 @@ function App() {
     }
   };
 
+  const handleMultipleFilesChange = (e) => {
+    const selectedFiles = e.target.files;
+    if (selectedFiles) {
+      const fileArray = Array.from(selectedFiles);
+
+      if (fileArray.length > 10) {
+        setError('Maximum 10 PDF files allowed');
+        setFiles([]);
+        return;
+      }
+
+      for (let f of fileArray) {
+        if (f.type !== 'application/pdf') {
+          setError('Only PDF files are allowed');
+          setFiles([]);
+          return;
+        }
+        if (f.size > 5 * 1024 * 1024) {
+          setError('File size must be less than 5MB');
+          setFiles([]);
+          return;
+        }
+      }
+
+      setFiles(fileArray);
+      setError('');
+    }
+  };
+
+  const removeFile = (index) => {
+    setFiles(files.filter((_, i) => i !== index));
+  };
+
   const handleScreenResume = async () => {
     setLoading(true);
     setError('');
     setAnalysis(null);
     try {
-      const apiUrl = `http://localhost:5000/api/screen/${selectedRole}`;
-      if (inputMode === 'file' && file) {
+      // Batch mode with multiple files
+      if (screenMode === 'batch' && files.length > 0) {
+        const apiUrl = `http://localhost:9999/api/batch-screen/${selectedRole}`;
+        const formData = new FormData();
+        files.forEach(f => formData.append('resumes', f));
+        const response = await axios.post(apiUrl, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 120000
+        });
+        setAnalysis(response.data);
+      }
+      // Single mode with file or text
+      else if (inputMode === 'file' && file) {
+        const apiUrl = `http://localhost:9999/api/screen/${selectedRole}`;
         const formData = new FormData();
         formData.append('resume', file);
         const response = await axios.post(apiUrl, formData, {
@@ -55,8 +102,11 @@ function App() {
         });
         setAnalysis(response.data);
       } else if (inputMode === 'text' && resume) {
+        const apiUrl = `http://localhost:9999/api/screen/${selectedRole}`;
         const response = await axios.post(apiUrl, { resume });
         setAnalysis(response.data);
+      } else {
+        setError('Please provide resume content or upload file(s)');
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to analyze resume. Please try again.');
@@ -69,6 +119,15 @@ function App() {
     setInputMode(mode);
     setError('');
     setAnalysis(null);
+  };
+
+  const handleScreenModeSwitch = (mode) => {
+    setScreenMode(mode);
+    setError('');
+    setAnalysis(null);
+    setFiles([]);
+    setFile(null);
+    setResume('');
   };
 
   return (
@@ -94,63 +153,140 @@ function App() {
         <input
           type="radio"
           className="btn-check"
-          name="inputMode"
-          id="textMode"
-          checked={inputMode === 'text'}
-          onChange={() => handleModeSwitch('text')}
+          name="screenMode"
+          id="singleMode"
+          checked={screenMode === 'single'}
+          onChange={() => handleScreenModeSwitch('single')}
         />
-        <label className="btn btn-outline-primary" htmlFor="textMode">
-          Paste Text
+        <label className="btn btn-outline-success" htmlFor="singleMode">
+          Single Resume
         </label>
 
         <input
           type="radio"
           className="btn-check"
-          name="inputMode"
-          id="fileMode"
-          checked={inputMode === 'file'}
-          onChange={() => handleModeSwitch('file')}
+          name="screenMode"
+          id="batchMode"
+          checked={screenMode === 'batch'}
+          onChange={() => handleScreenModeSwitch('batch')}
         />
-        <label className="btn btn-outline-primary" htmlFor="fileMode">
-          Upload PDF
+        <label className="btn btn-outline-success" htmlFor="batchMode">
+          Batch (5-10 PDFs)
         </label>
       </div>
 
+      {screenMode === 'single' && (
+        <div className="btn-group mt-4 w-100" role="group">
+          <input
+            type="radio"
+            className="btn-check"
+            name="inputMode"
+            id="textMode"
+            checked={inputMode === 'text'}
+            onChange={() => handleModeSwitch('text')}
+          />
+          <label className="btn btn-outline-primary" htmlFor="textMode">
+            Paste Text
+          </label>
+
+          <input
+            type="radio"
+            className="btn-check"
+            name="inputMode"
+            id="fileMode"
+            checked={inputMode === 'file'}
+            onChange={() => handleModeSwitch('file')}
+          />
+          <label className="btn btn-outline-primary" htmlFor="fileMode">
+            Upload PDF
+          </label>
+        </div>
+      )}
+
       <div className="form-group mt-4">
-        {inputMode === 'text' ? (
-          <textarea
-            className="form-control"
-            rows="15"
-            placeholder="Paste resume here..."
-            value={resume}
-            onChange={(e) => setResume(e.target.value)}
-          ></textarea>
+        {screenMode === 'single' ? (
+          <>
+            {inputMode === 'text' ? (
+              <textarea
+                className="form-control"
+                rows="15"
+                placeholder="Paste resume here..."
+                value={resume}
+                onChange={(e) => setResume(e.target.value)}
+              ></textarea>
+            ) : (
+              <div className="border p-4 text-center" style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#0ea5e9', opacity: 0.6 }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </div>
+                <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}>Click to upload your PDF resume</p>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileChange}
+                  id="pdfInput"
+                  style={{ display: 'none' }}
+                />
+                <label htmlFor="pdfInput" className="btn btn-primary" style={{ cursor: 'pointer' }}>
+                  Choose PDF File
+                </label>
+                {file && (
+                  <div className="mt-4" style={{ width: '100%' }}>
+                    <div className="alert alert-success mb-0">
+                      <p style={{ marginBottom: '0.5rem' }}>✓ File selected</p>
+                      <strong>{file.name}</strong><br />
+                      <small>{(file.size / 1024).toFixed(2)} KB</small>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <div className="border p-4 text-center" style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ marginBottom: '1rem' }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#0ea5e9', opacity: 0.6 }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#10b981', opacity: 0.6 }}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
             </div>
-            <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}>Click to upload your PDF resume</p>
+            <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}>Upload 5-10 PDF resumes for batch screening</p>
             <input
               type="file"
               accept=".pdf"
-              onChange={handleFileChange}
-              id="pdfInput"
+              onChange={handleMultipleFilesChange}
+              id="batchPdfInput"
               style={{ display: 'none' }}
+              multiple
             />
-            <label htmlFor="pdfInput" className="btn btn-primary" style={{ cursor: 'pointer' }}>
-              Choose PDF File
+            <label htmlFor="batchPdfInput" className="btn btn-success" style={{ cursor: 'pointer' }}>
+              Choose PDF Files
             </label>
-            {file && (
+            {files.length > 0 && (
               <div className="mt-4" style={{ width: '100%' }}>
-                <div className="alert alert-success mb-0">
-                  <p style={{ marginBottom: '0.5rem' }}>✓ File selected</p>
-                  <strong>{file.name}</strong><br />
-                  <small>{(file.size / 1024).toFixed(2)} KB</small>
+                <div className="alert alert-success mb-3">
+                  <p style={{ marginBottom: '0.5rem' }}>✓ {files.length} file(s) selected</p>
+                </div>
+                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  {files.map((f, idx) => (
+                    <div key={idx} className="alert alert-info mb-2" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong>{f.name}</strong><br />
+                        <small>{(f.size / 1024).toFixed(2)} KB</small>
+                      </div>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => removeFile(idx)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -160,14 +296,95 @@ function App() {
       <button
         className="btn btn-primary mt-3"
         onClick={handleScreenResume}
-        disabled={loading || (inputMode === 'text' ? !resume : !file)}
+        disabled={loading || (screenMode === 'batch' ? files.length === 0 : inputMode === 'text' ? !resume : !file)}
       >
-        {loading ? 'Analyzing...' : 'Analyze Resume'}
+        {loading ? (screenMode === 'batch' ? 'Processing Batch...' : 'Analyzing...') : (screenMode === 'batch' ? `Analyze ${files.length} Resumes` : 'Analyze Resume')}
       </button>
 
       {error && <div className="alert alert-danger mt-4">{error}</div>}
 
-      {analysis && (
+      {analysis && analysis.batch_id && (
+        <div className="mt-5 mb-5">
+          <h2 style={{ marginBottom: '2rem' }}>📊 Batch Analysis Results</h2>
+
+          <div className="card mb-4">
+            <div className="card-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1.5rem', borderRadius: '8px', textAlign: 'center' }}>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Total Processed</p>
+                  <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#6ee7b7' }}>{analysis.processed}</p>
+                </div>
+                <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1.5rem', borderRadius: '8px', textAlign: 'center' }}>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Interview</p>
+                  <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#6ee7b7' }}>{analysis.summary.interview_count}</p>
+                </div>
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '1.5rem', borderRadius: '8px', textAlign: 'center' }}>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Reject</p>
+                  <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fca5a5' }}>{analysis.summary.reject_count}</p>
+                </div>
+                <div style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '1.5rem', borderRadius: '8px', textAlign: 'center' }}>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Avg Score</p>
+                  <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fcd34d' }}>{analysis.summary.average_score}%</p>
+                </div>
+              </div>
+
+              <h5 style={{ marginBottom: '1.5rem', color: '#38bdf8' }}>Candidate Summaries</h5>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                {analysis.summaries.map((item, idx) => (
+                  <div key={idx} style={{ backgroundColor: 'rgba(14, 165, 233, 0.05)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
+                      <div>
+                        <p style={{ color: '#38bdf8', fontWeight: 'bold', marginBottom: '0.5rem', wordBreak: 'break-word' }}>{item.filename}</p>
+                        <p style={{ color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                          {item.decision === 'interview' ? '✅ Interview' : '❌ Reject'} • Score: {item.score}%
+                        </p>
+                        {item.verified && (
+                          <p style={{ color: '#6ee7b7', fontSize: '0.85rem' }}>✓ Verified by LLM Judge</p>
+                        )}
+                      </div>
+                    </div>
+                    <p style={{ color: '#a1d5f7', fontSize: '0.9rem', lineHeight: '1.5' }}>{item.summary}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <h5 style={{ marginBottom: '1.5rem', marginTop: '2rem' }}>Detailed Results</h5>
+          {analysis.results.map((result, idx) => (
+            <div key={idx} className="card mb-3">
+              <div className="card-body">
+                <h6 style={{ color: '#38bdf8', marginBottom: '1rem' }}>📄 {result.filename}</h6>
+                {result.error ? (
+                  <div className="alert alert-warning mb-0">{result.error}</div>
+                ) : (
+                  <div>
+                    <p style={{ color: '#cbd5e1', marginBottom: '1rem' }}>
+                      <strong>Decision:</strong> {result.decision === 'interview' ? '✅ Interview' : '❌ Reject'} • <strong>Score:</strong> {result.score}%
+                    </p>
+                    <div style={{ backgroundColor: 'rgba(14, 165, 233, 0.05)', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
+                      <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}><strong>Skills Found:</strong></p>
+                      <p style={{ color: '#a1d5f7' }}>{result.candidate_analysis.skills.join(', ') || 'None'}</p>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.9rem' }}>
+                      <div>
+                        <p style={{ color: '#cbd5e1', marginBottom: '0.3rem' }}><strong>Experience:</strong></p>
+                        <p style={{ color: '#a1d5f7' }}>{result.candidate_analysis.experience} years</p>
+                      </div>
+                      <div>
+                        <p style={{ color: '#cbd5e1', marginBottom: '0.3rem' }}><strong>Matched Skills:</strong></p>
+                        <p style={{ color: '#6ee7b7' }}>{result.matched_skills.join(', ') || 'None'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {analysis && !analysis.batch_id && (
         <div className="mt-5 mb-5">
           <h2 style={{ marginBottom: '2rem' }}>📊 Analysis Result</h2>
           {analysis.safety_checks && (
