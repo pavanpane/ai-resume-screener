@@ -1,11 +1,39 @@
 const { OpenAI } = require("openai");
+const { getDocument } = require('pdfjs-dist/legacy/build/pdf');
 
 const client = new OpenAI({
 	baseURL: "https://router.huggingface.co/v1",
-	apiKey: process.env.HUGGING_FACE_API_KEY,
+	apiKey: process.env.HUGGINGFACE_API_KEY,
 });
 
 const MAX_RESUME_SIZE = 50000; // 50KB
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+const extractTextFromPDF = async (pdfBuffer) => {
+  try {
+    const uint8Array = new Uint8Array(pdfBuffer);
+    const pdf = await getDocument({ data: uint8Array }).promise;
+    let extractedText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      extractedText += pageText + ' ';
+    }
+
+    extractedText = extractedText.trim();
+
+    if (!extractedText || extractedText.length === 0) {
+      throw new Error('No text found in PDF');
+    }
+
+    return extractedText;
+  } catch (error) {
+    console.error('Error extracting PDF text:', error);
+    throw new Error('Failed to extract text from PDF: ' + error.message);
+  }
+};
 
 const validateResume = (resume) => {
   if (!resume || typeof resume !== 'string') {
@@ -87,13 +115,21 @@ const parseJsonResponse = (text) => {
 }
 
 const screenResume = async (req, res) => {
-  const { resume } = req.body;
+  const textResume = req.body.resume;
+  const file = req.file;
 
-  if (!resume) {
-    return res.status(400).json({ error: 'Resume content is required' });
+  if (!textResume && !file) {
+    return res.status(400).json({ error: 'Resume content or PDF file is required' });
   }
 
   try {
+    let resume;
+    if (file) {
+      resume = await extractTextFromPDF(file.buffer);
+    } else {
+      resume = textResume;
+    }
+
     validateResume(resume);
     const analysisPrompt = `Analyze the provided resume for a software engineer position. Extract skills, years of experience (as a number), strengths, and any missing key requirements.
 Return a JSON object with the following structure: {"skills": [], "experience": 0, "strengths": [], "missing_requirements": []}.
@@ -164,4 +200,5 @@ ${JSON.stringify(analysis, null, 2)}`;
 
 module.exports = {
   screenResume,
+  extractTextFromPDF,
 };

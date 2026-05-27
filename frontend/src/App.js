@@ -4,40 +4,120 @@ import './App.css';
 
 function App() {
   const [resume, setResume] = useState('');
+  const [file, setFile] = useState(null);
+  const [inputMode, setInputMode] = useState('text');
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      if (selectedFile.type !== 'application/pdf') {
+        setError('Only PDF files are allowed');
+        setFile(null);
+        return;
+      }
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        setError('File size must be less than 5MB');
+        setFile(null);
+        return;
+      }
+      setFile(selectedFile);
+      setError('');
+    }
+  };
 
   const handleScreenResume = async () => {
     setLoading(true);
     setError('');
     setAnalysis(null);
     try {
-      const response = await axios.post('http://localhost:5000/api/screen', { resume });
-      setAnalysis(response.data);
+      if (inputMode === 'file' && file) {
+        const formData = new FormData();
+        formData.append('resume', file);
+        const response = await axios.post('http://localhost:5000/api/screen', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        setAnalysis(response.data);
+      } else if (inputMode === 'text' && resume) {
+        const response = await axios.post('http://localhost:5000/api/screen', { resume });
+        setAnalysis(response.data);
+      }
     } catch (err) {
-      setError('Failed to analyze resume. Please try again.');
+      setError(err.response?.data?.error || 'Failed to analyze resume. Please try again.');
       console.error(err);
     }
     setLoading(false);
   };
 
+  const handleModeSwitch = (mode) => {
+    setInputMode(mode);
+    setError('');
+    setAnalysis(null);
+  };
+
   return (
     <div className="container mt-5">
       <h1 className="text-center">AI Resume Screener</h1>
+
+      <div className="btn-group mt-4 w-100" role="group">
+        <input
+          type="radio"
+          className="btn-check"
+          name="inputMode"
+          id="textMode"
+          checked={inputMode === 'text'}
+          onChange={() => handleModeSwitch('text')}
+        />
+        <label className="btn btn-outline-primary" htmlFor="textMode">
+          Paste Text
+        </label>
+
+        <input
+          type="radio"
+          className="btn-check"
+          name="inputMode"
+          id="fileMode"
+          checked={inputMode === 'file'}
+          onChange={() => handleModeSwitch('file')}
+        />
+        <label className="btn btn-outline-primary" htmlFor="fileMode">
+          Upload PDF
+        </label>
+      </div>
+
       <div className="form-group mt-4">
-        <textarea
-          className="form-control"
-          rows="15"
-          placeholder="Paste resume here..."
-          value={resume}
-          onChange={(e) => setResume(e.target.value)}
-        ></textarea>
+        {inputMode === 'text' ? (
+          <textarea
+            className="form-control"
+            rows="15"
+            placeholder="Paste resume here..."
+            value={resume}
+            onChange={(e) => setResume(e.target.value)}
+          ></textarea>
+        ) : (
+          <div className="border rounded p-4 text-center" style={{ minHeight: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={handleFileChange}
+              className="form-control"
+              id="pdfInput"
+            />
+            {file && (
+              <div className="mt-3">
+                <p className="text-success">✓ File selected: <strong>{file.name}</strong></p>
+                <small className="text-muted">{(file.size / 1024).toFixed(2)} KB</small>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <button
         className="btn btn-primary mt-3"
         onClick={handleScreenResume}
-        disabled={loading || !resume}
+        disabled={loading || (inputMode === 'text' ? !resume : !file)}
       >
         {loading ? 'Analyzing...' : 'Analyze Resume'}
       </button>
